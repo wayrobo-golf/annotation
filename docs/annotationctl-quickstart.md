@@ -42,11 +42,12 @@ workspace:
 
 auto_annotation:
   base_yaml_path: /home/keyaoli/Code/Wayrobo/3D_Detection_Annotation/automatic_annotation/config/default.yaml
+  extrinsics_source:
+    path: /home/keyaoli/Data/AutoAnnotation/Wayrobo_Rosbag/BaoLi20260305_Debug/config.yaml
+    quaternion_order: wxyz
   overrides:
     global_pc_map_addr: /home/keyaoli/Data/AutoAnnotation/MapAnnotation/bl_20260317/velodyne_points/data/colored_lidar_merged.pcd
     pc_annotation_file_addr: /home/keyaoli/Data/AutoAnnotation/MapAnnotation/bl_20260317/tracklet_labels.xml
-    default_tf_lidar_to_ins: [-0.347, 0.000, 1.277, -0.981, -0.378, -1.315]
-    default_tf_lcam_to_lidar: [0.070, 0.116, 0.071, -126.100, -1.000, -91.300]
 
 xtreme:
   base_url: http://localhost:8190
@@ -68,7 +69,9 @@ output:
 - `input.qos_yaml_path`：可选的 rosbag 播放 QoS override 文件路径；如果配置且文件存在，`ros2 bag play` 会带上 `--qos-profile-overrides-path`。
 - `workspace.root_dir`：annotationctl 工作目录，`jobs/<job_id>/`、中间产物、状态文件都会写到这里。
 - `auto_annotation.base_yaml_path` 是模板 yaml
+- `auto_annotation.extrinsics_source`：可选的原始外参 yaml 配置；工作流会读取其中的 `trans_imu2ins` / `quat_imu_to_ins` / `trans_lidar_to_imu` / `quat_lidar_to_imu` / `trans_cam_to_lidar` / `quat_cam_to_lidar`，自动生成 `default_tf_lidar_to_ins` 和 `default_tf_lcam_to_lidar`。
 - `auto_annotation.overrides` 会生成到 job 私有 runtime yaml，而不会改仓库里的 `default.yaml`
+- 如果 `auto_annotation.extrinsics_source` 和 `auto_annotation.overrides` 同时配置了 `default_tf_lidar_to_ins` 或 `default_tf_lcam_to_lidar`，以 `overrides` 中的手写值为准。
 - `xtreme.base_url`：Xtreme1 服务地址。
 - `xtreme.token_env`：Xtreme1 token 的环境变量名，只写变量名，不在 `job.yaml` 中写明文 token；默认可配合仓库根目录 `.env` 使用。
 - `xtreme.dataset_name`：本次 submit 在 Xtreme1 中创建或复用的数据集名称。
@@ -207,8 +210,13 @@ status=completed
 
 - `global_pc_map_addr`
 - `pc_annotation_file_addr`
-- `default_tf_lidar_to_ins`
-- `default_tf_lcam_to_lidar`
+
+如果外参由 `auto_annotation.extrinsics_source` 自动生成，继续检查：
+
+- 原始外参 yaml 路径是否正确
+- 原始外参 yaml 是否包含 `trans_imu2ins` / `quat_imu_to_ins` / `trans_lidar_to_imu` / `quat_lidar_to_imu` / `trans_cam_to_lidar` / `quat_cam_to_lidar`
+- `quaternion_order` 是否与原始文件一致，默认是 `wxyz`
+- `jobs/<job_id>/runtime/auto_annotation.yaml` 中生成的 `default_tf_lidar_to_ins` 和 `default_tf_lcam_to_lidar` 是否符合预期
 
 ### 7.3 finalize 失败
 

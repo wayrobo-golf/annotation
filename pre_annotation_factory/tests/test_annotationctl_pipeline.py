@@ -677,6 +677,135 @@ def test_submit_generates_job_specific_auto_annotation_yaml(tmp_path: Path, monk
     assert Path(state.paths["auto_annotation_yaml_path"]).exists()
 
 
+def test_submit_generates_auto_annotation_yaml_from_extrinsics_source(
+    tmp_path: Path, monkeypatch
+):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    base_yaml = tmp_path / "default.yaml"
+    base_yaml.write_text(
+        "\n".join(
+            [
+                "automatic_annotation_node:",
+                "  ros__parameters:",
+                "    global_pc_map_addr: /maps/default.pcd",
+                "    default_tf_lcam_to_lidar: [0, 0, 0, 0, 0, 0]",
+                "    default_tf_lidar_to_ins: [0, 0, 0, 0, 0, 0]",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    extrinsics_yaml = tmp_path / "raw_extrinsics.yaml"
+    extrinsics_yaml.write_text(
+        "\n".join(
+            [
+                "quat_cam_to_lidar: [1.0, 0, 0, 0]",
+                "trans_cam_to_lidar: [1.0, 2.0, 3.0]",
+                "quat_lidar_to_imu: [1.0, 0, 0, 0]",
+                "trans_lidar_to_imu: [0.5, 0.25, 1.0]",
+                "quat_imu_to_ins: [1.0, 0, 0, 0]",
+                "trans_imu2ins: [10.0, 20.0, 30.0]",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    manifest_path = tmp_path / "job.yaml"
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    manifest_path.write_text(
+        "\n".join(
+            [
+                "job_name: demo_job",
+                "location: Demo_20260416",
+                "input:",
+                f"  source_dir: {source_dir}",
+                "workspace:",
+                f"  root_dir: {tmp_path / 'workspace'}",
+                "auto_annotation:",
+                f"  base_yaml_path: {base_yaml}",
+                "  extrinsics_source:",
+                f"    path: {extrinsics_yaml}",
+                "  overrides:",
+                "    global_pc_map_addr: /maps/job.pcd",
+                "xtreme:",
+                "  base_url: http://127.0.0.1:8190",
+                "  token_env: XTREME1_TOKEN",
+                "  dataset_name: DemoDataset",
+                "  dataset_type: lidar_fusion",
+                "output:",
+                f"  final_dataset_dir: {tmp_path / 'final'}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    manifest = load_job_manifest(manifest_path)
+    monkeypatch.setenv("XTREME1_TOKEN", "token")
+
+    class FakeGateway:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def create_or_get_dataset(self, *_args, **_kwargs):
+            return "dataset-001"
+
+        def request_upload_url(self, *_args, **_kwargs):
+            return ("http://upload.local/file", "http://access.local/file")
+
+        def upload_archive(self, *_args, **_kwargs):
+            return None
+
+        def import_archive(self, *_args, **_kwargs):
+            return "import-001"
+
+        def wait_import_done(self, *_args, **_kwargs):
+            return None
+
+    def fake_extract(_source, target, **_kwargs):
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def fake_run_auto_annotation(_target_path, _location_str, **kwargs):
+        runtime_yaml = Path(kwargs["yaml_config_path"])
+        content = yaml.safe_load(runtime_yaml.read_text(encoding="utf-8"))
+        params = content["automatic_annotation_node"]["ros__parameters"]
+        assert params["global_pc_map_addr"] == "/maps/job.pcd"
+        assert params["default_tf_lcam_to_lidar"] == pytest.approx(
+            [1.0, 2.0, 3.0, 0.0, 0.0, 0.0], abs=1e-6
+        )
+        assert params["default_tf_lidar_to_ins"] == pytest.approx(
+            [10.5, 20.25, 31.0, 0.0, 0.0, 0.0], abs=1e-6
+        )
+
+        xtreme_zip = kwargs["xtreme1_output_dir"] / "upload.zip"
+        xtreme_zip.parent.mkdir(parents=True, exist_ok=True)
+        xtreme_zip.write_bytes(b"zip")
+        raw_origin_dir = kwargs["raw_data_archive_dir"] / "origin"
+        raw_origin_dir.mkdir(parents=True, exist_ok=True)
+        submit_manifest = write_submit_manifest_file(
+            kwargs["xtreme1_output_dir"] / "submit_frames.json"
+        )
+        return {
+            "xtreme_zip_path": xtreme_zip,
+            "raw_archive_dir": raw_origin_dir,
+            "xtreme_upload_dir": kwargs["xtreme1_output_dir"],
+            "submit_manifest_path": submit_manifest,
+        }
+
+    pipeline = WorkflowPipeline.for_tests(
+        tmp_path / "workspace",
+        gateway_factory=FakeGateway,
+        extract_archives_fn=fake_extract,
+        get_bags_to_process_fn=lambda path: [path] if Path(path) == source_dir else [],
+        auto_annotation_runner=fake_run_auto_annotation,
+    )
+
+    pipeline.submit(manifest)
+
+
 def test_load_job_manifest_parses_optional_input_qos_yaml_path(tmp_path: Path):
     manifest_path = tmp_path / "job.yaml"
     qos_yaml_path = tmp_path / "rosbag_qos.yaml"

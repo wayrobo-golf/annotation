@@ -35,9 +35,16 @@ class OutputConfig:
 
 
 @dataclass
+class ExtrinsicsSourceConfig:
+    path: Path
+    quaternion_order: str = "wxyz"
+
+
+@dataclass
 class AutoAnnotationConfig:
     base_yaml_path: Path
     overrides: dict[str, Any] = field(default_factory=dict)
+    extrinsics_source: ExtrinsicsSourceConfig | None = None
 
 
 @dataclass
@@ -93,6 +100,18 @@ def load_job_manifest(path: Path) -> JobManifest:
             AutoAnnotationConfig(
                 base_yaml_path=Path(payload["auto_annotation"]["base_yaml_path"]),
                 overrides=payload["auto_annotation"].get("overrides", {}),
+                extrinsics_source=(
+                    ExtrinsicsSourceConfig(
+                        path=Path(
+                            payload["auto_annotation"]["extrinsics_source"]["path"]
+                        ),
+                        quaternion_order=payload["auto_annotation"][
+                            "extrinsics_source"
+                        ].get("quaternion_order", "wxyz"),
+                    )
+                    if payload["auto_annotation"].get("extrinsics_source") is not None
+                    else None
+                ),
             )
             if "auto_annotation" in payload
             else None

@@ -8,6 +8,7 @@ import yaml
 
 from .job_models import JobManifest, JobState, load_job_manifest
 from .job_store import JobStore
+from .extrinsics import build_default_tf_overrides
 from .xtreme_gateway import (
     XtremeGateway,
     normalize_export_tree,
@@ -92,6 +93,14 @@ class WorkflowPipeline:
             manifest.auto_annotation.base_yaml_path.read_text(encoding="utf-8")
         )
         params = payload["automatic_annotation_node"]["ros__parameters"]
+        if manifest.auto_annotation.extrinsics_source is not None:
+            extrinsics_overrides = build_default_tf_overrides(
+                manifest.auto_annotation.extrinsics_source.path,
+                quaternion_order=(
+                    manifest.auto_annotation.extrinsics_source.quaternion_order
+                ),
+            )
+            params.update(extrinsics_overrides)
         params.update(manifest.auto_annotation.overrides)
 
         runtime_dir = job_dir / "runtime"
