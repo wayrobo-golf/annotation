@@ -623,16 +623,28 @@ void GenPromptPoint::InitClassMappingAndReflact() {
   // ... 其他
   class_name_to_label_["Distance Marker"] = "Distance_Marker";
   class_name_to_label_["Structure"] = "Unloading_Station";
+  class_name_to_label_["Unloading_Station"] = "Unloading_Station";
   class_name_to_label_["flag"] = "Pole";
+  class_name_to_label_["Pole"] = "Pole";
   class_name_to_label_["Chipping Net"] = "Chipping_Net";
   class_name_to_label_["Bucket"] = "Bucket";
   class_name_to_label_["Golf_Cart"] = "Golf_Cart";
+  class_name_to_label_["Person"] = "Person";
+  class_name_to_label_["Billboard"] = "Billboard";
+  class_name_to_label_["Target"] = "Target";
+  class_name_to_label_["Picker_Gangs"] = "Picker_Gangs";
+  class_name_to_label_["Sprinkler_Head"] = "Sprinkler_Head";
   class_name_to_id_["Distance_Marker"] = 1;
   class_name_to_id_["Unloading_Station"] = 2;
   class_name_to_id_["Pole"] = 3;
   class_name_to_id_["Chipping_Net"] = 4;
   class_name_to_id_["Bucket"] = 5;
   class_name_to_id_["Golf_Cart"] = 6;
+  class_name_to_id_["Person"] = 7;
+  class_name_to_id_["Billboard"] = 8;
+  class_name_to_id_["Target"] = 9;
+  class_name_to_id_["Picker_Gangs"] = 10;
+  class_name_to_id_["Sprinkler_Head"] = 11;
 }
 
 /**
