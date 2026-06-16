@@ -16,43 +16,69 @@ def load_merge_module():
     return module
 
 
-def write_camera_config(config_path: Path):
+def write_camera_config(config_path: Path, include_tf_lidar_to_map: bool = True):
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = [
-        {
-            "camera_internal": {
-                "fx": 1000.0,
-                "fy": 1000.0,
-                "cx": 960.0,
-                "cy": 540.0,
-            },
-            "width": 1920,
-            "height": 1080,
-            "camera_external": [
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-            ],
-        }
-    ]
+    config = {
+        "camera_internal": {
+            "fx": 1000.0,
+            "fy": 1000.0,
+            "cx": 960.0,
+            "cy": 540.0,
+        },
+        "width": 1920,
+        "height": 1080,
+        "camera_external": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ],
+    }
+    if include_tf_lidar_to_map:
+        config["tf_lidar_to_map"] = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+    payload = [config]
     config_path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def create_raw_frame(scene_dir: Path, frame_id: str, raw_label: str):
-    write_camera_config(scene_dir / "camera_config" / f"{frame_id}.json")
+def create_raw_frame(
+    scene_dir: Path,
+    frame_id: str,
+    raw_label: str,
+    include_tf_lidar_to_map: bool = True,
+):
+    write_camera_config(
+        scene_dir / "camera_config" / f"{frame_id}.json",
+        include_tf_lidar_to_map=include_tf_lidar_to_map,
+    )
     (scene_dir / "camera_image_0").mkdir(parents=True, exist_ok=True)
     (scene_dir / "camera_image_0" / f"{frame_id}.png").write_bytes(b"fake-image")
     (scene_dir / "lidar_point_cloud_0").mkdir(parents=True, exist_ok=True)
@@ -62,6 +88,18 @@ def create_raw_frame(scene_dir: Path, frame_id: str, raw_label: str):
     )
     (scene_dir / "label_2").mkdir(parents=True, exist_ok=True)
     (scene_dir / "label_2" / f"{frame_id}.txt").write_text(raw_label, encoding="utf-8")
+
+
+def create_xtreme_data(xtreme_root: Path, scene_name: str, frame_id: str):
+    data_dir = xtreme_root / scene_name / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "name": frame_id,
+        "cameraConfig": {"filename": f"{frame_id}.json"},
+        "cameraImages": [{"filename": f"{frame_id}.png"}],
+        "lidarPointClouds": [{"filename": f"{frame_id}.pcd"}],
+    }
+    (data_dir / f"{frame_id}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def create_xtreme_result(xtreme_root: Path, scene_name: str, frame_id: str, payload=None):
@@ -370,6 +408,140 @@ def test_finalize_marks_missing_json_only_for_uploaded_frames(tmp_path):
     label_files = read_output_labels(output_root)
     assert [path.stem for path in label_files] == ["uploaded_missing_json"]
     assert label_files[0].read_text(encoding="utf-8") == ""
+
+
+def test_xtreme_data_manifest_matches_nearby_raw_timestamp(tmp_path):
+    module = load_merge_module()
+
+    raw_root = tmp_path / "raw"
+    xtreme_root = tmp_path / "xtreme"
+    output_root = tmp_path / "output"
+    raw_frame_id = "1710000000000001000"
+    xtreme_frame_id = "1710000000000001120"
+    scene_dir = raw_root / "data_record_20260414" / "Scene_01"
+
+    create_raw_frame(scene_dir, raw_frame_id, "raw-label\n")
+    create_xtreme_data(xtreme_root, "Scene_01", xtreme_frame_id)
+    create_xtreme_result(xtreme_root, "Scene_01", xtreme_frame_id)
+
+    manifest_path = tmp_path / "submit_manifest.json"
+    write_submit_manifest(
+        manifest_path,
+        [{"scene_name": "Scene_01", "frame_id": raw_frame_id, "img_ext": ".png"}],
+    )
+
+    stub_external_effects(module, output_root)
+    module.MAX_EMPTY_LABEL_RATIO = 1.0
+    module.parse_xtreme_to_kitti_lines = lambda xtreme_json_path, _config_path: [
+        f"Car from_{Path(xtreme_json_path).stem}\n"
+    ]
+
+    module.build_final_dataset(
+        "unit_test",
+        xtreme_export_root=xtreme_root,
+        raw_archive_root=raw_root,
+        final_kitti_output_dir=output_root,
+        submit_manifest_path=manifest_path,
+        max_empty_label_ratio=1.0,
+    )
+
+    label_files = read_output_labels(output_root)
+    assert [path.stem for path in label_files] == [raw_frame_id]
+    assert label_files[0].read_text(encoding="utf-8") == f"Car from_{xtreme_frame_id}\n"
+
+
+def test_manifest_frame_missing_from_xtreme_data_manifest_is_skipped(tmp_path):
+    module = load_merge_module()
+
+    raw_root = tmp_path / "raw"
+    xtreme_root = tmp_path / "xtreme"
+    output_root = tmp_path / "output"
+    uploaded_frame_id = "1710000000000001000"
+    not_uploaded_frame_id = "1710000000500001000"
+    scene_dir = raw_root / "data_record_20260414" / "Scene_01"
+
+    create_raw_frame(scene_dir, uploaded_frame_id, "raw-label\n")
+    create_raw_frame(scene_dir, not_uploaded_frame_id, "raw-label\n")
+    create_xtreme_data(xtreme_root, "Scene_01", uploaded_frame_id)
+    create_xtreme_result(xtreme_root, "Scene_01", uploaded_frame_id)
+
+    manifest_path = tmp_path / "submit_manifest.json"
+    write_submit_manifest(
+        manifest_path,
+        [
+            {"scene_name": "Scene_01", "frame_id": uploaded_frame_id, "img_ext": ".png"},
+            {
+                "scene_name": "Scene_01",
+                "frame_id": not_uploaded_frame_id,
+                "img_ext": ".png",
+            },
+        ],
+    )
+
+    stub_external_effects(module, output_root)
+    module.MAX_EMPTY_LABEL_RATIO = 1.0
+    module.parse_xtreme_to_kitti_lines = lambda *_args, **_kwargs: [
+        "Car 0.00 0 0.00 0.00 0.00 10.00 10.00 1.00 1.00 1.00 0.00 0.00 10.00 0.00 0.00 0.00\n"
+    ]
+
+    module.build_final_dataset(
+        "unit_test",
+        xtreme_export_root=xtreme_root,
+        raw_archive_root=raw_root,
+        final_kitti_output_dir=output_root,
+        submit_manifest_path=manifest_path,
+        max_empty_label_ratio=1.0,
+    )
+
+    label_files = read_output_labels(output_root)
+    assert [path.stem for path in label_files] == [uploaded_frame_id]
+
+
+def test_frames_missing_tf_lidar_to_map_are_filtered_out(tmp_path, capsys):
+    module = load_merge_module()
+
+    raw_root = tmp_path / "raw"
+    xtreme_root = tmp_path / "xtreme"
+    output_root = tmp_path / "output"
+    scene_dir = raw_root / "data_record_20260414" / "Scene_01"
+
+    create_raw_frame(
+        scene_dir,
+        "missing_tf_frame",
+        "raw-label\n",
+        include_tf_lidar_to_map=False,
+    )
+    create_xtreme_result(xtreme_root, "Scene_01", "missing_tf_frame")
+    create_raw_frame(scene_dir, "valid_frame", "raw-label\n")
+    create_xtreme_result(xtreme_root, "Scene_01", "valid_frame")
+
+    manifest_path = tmp_path / "submit_manifest.json"
+    write_submit_manifest(
+        manifest_path,
+        [
+            {"scene_name": "Scene_01", "frame_id": "missing_tf_frame", "img_ext": ".png"},
+            {"scene_name": "Scene_01", "frame_id": "valid_frame", "img_ext": ".png"},
+        ],
+    )
+
+    stub_external_effects(module, output_root)
+    module.MAX_EMPTY_LABEL_RATIO = 1.0
+    module.parse_xtreme_to_kitti_lines = lambda *_args, **_kwargs: [
+        "Car 0.00 0 0.00 0.00 0.00 10.00 10.00 1.00 1.00 1.00 0.00 0.00 10.00 0.00 0.00 0.00\n"
+    ]
+
+    module.build_final_dataset(
+        "unit_test",
+        xtreme_export_root=xtreme_root,
+        raw_archive_root=raw_root,
+        final_kitti_output_dir=output_root,
+        submit_manifest_path=manifest_path,
+        max_empty_label_ratio=1.0,
+    )
+
+    label_files = read_output_labels(output_root)
+    assert [path.stem for path in label_files] == ["valid_frame"]
+    assert "已过滤 1 帧缺 tf_lidar_to_map 数据" in capsys.readouterr().out
 
 
 def test_finalize_requires_submit_manifest_path(tmp_path):
