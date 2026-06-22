@@ -200,9 +200,12 @@ status=completed
 
 - `state.json` 中的 `current_step` 是否为 `uploading_xtreme`
 - `state.json` 中的 `last_error`
+- 终端日志中的 `import task <serial> status=<status>`
 - `artifacts/xtreme_upload/*.zip` 是否已生成
 
 如果 zip 已生成，可直接执行一次 `annotationctl upload <job_id> --workspace <workspace.root_dir>` 重试，不需要重新回放 rosbag。
+
+如果 Xtreme 页面中已经能看到导入数据，但脚本仍报超时，通常是导入耗时超过脚本等待窗口，或 Xtreme 返回了新状态枚举。新版等待逻辑会把最后一次 `last_status` 和 `last_response` 写入 `last_error`，便于判断是否需要继续等待或补充状态兼容。
 
 ### 7.2 submit 后全是空帧
 

@@ -303,6 +303,47 @@ def test_import_archive_and_wait_import_done_use_v06_data_endpoints(monkeypatch)
     )
 
 
+def test_wait_import_done_accepts_completed_status(monkeypatch):
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+    gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")
+
+    def fake_request(_method, _path, payload=None, params=None):
+        return {"data": [{"status": "COMPLETED"}]}
+
+    monkeypatch.setattr(gateway, "_request_json", fake_request)
+
+    gateway.wait_import_done("upload-serial-001", max_attempts=1, sleep_seconds=0)
+
+
+def test_wait_import_done_accepts_upload_completed_status(monkeypatch):
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+    gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")
+
+    def fake_request(_method, _path, payload=None, params=None):
+        return {"data": [{"status": "UPLOAD_COMPLETED"}]}
+
+    monkeypatch.setattr(gateway, "_request_json", fake_request)
+
+    gateway.wait_import_done("upload-serial-001", max_attempts=1, sleep_seconds=0)
+
+
+def test_wait_import_done_timeout_reports_last_status_and_response(monkeypatch):
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+    gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")
+
+    def fake_request(_method, _path, payload=None, params=None):
+        return {"data": [{"status": "QUEUED", "progress": 30}]}
+
+    monkeypatch.setattr(gateway, "_request_json", fake_request)
+
+    with pytest.raises(TimeoutError) as exc_info:
+        gateway.wait_import_done("upload-serial-001", max_attempts=1, sleep_seconds=0)
+
+    message = str(exc_info.value)
+    assert "last_status=QUEUED" in message
+    assert "progress" in message
+
+
 def test_request_export_and_wait_export_done_use_dataset_export(monkeypatch):
     monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
     gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")

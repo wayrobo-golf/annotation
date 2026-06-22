@@ -22,6 +22,17 @@ class XtremeGateway:
     TRANSIENT_STATUS_CODES = {502, 503, 504}
     REQUEST_RETRY_ATTEMPTS = 3
     REQUEST_RETRY_DELAY_SECONDS = 1.0
+    IMPORT_SUCCESS_STATUSES = {
+        "COMPLETED",
+        "IMPORT_COMPLETED",
+        "IMPORT_SUCCESS",
+        "PARSE_COMPLETED",
+        "PARSE_SUCCESS",
+        "SUCCESS",
+        "DONE",
+        "FINISHED",
+    }
+    IMPORT_FAILURE_STATUSES = {"FAIL", "FAILED", "ERROR"}
 
     def __init__(self, base_url: str, token_env: str):
         token = os.environ.get(token_env)
@@ -143,26 +154,51 @@ class XtremeGateway:
     def wait_import_done(
         self,
         import_task_serial: str,
-        max_attempts: int = 60,
+        max_attempts: int = 180,
         sleep_seconds: float = 5.0,
     ) -> None:
+        last_response = None
+        last_status = None
+        last_logged_status = None
         for _ in range(max_attempts):
             response = self._request_json(
                 "GET",
                 self.DATASET_IMPORT_STATUS_PATH,
                 params={"serialNumbers": import_task_serial},
             )
+            last_response = response
             records = response.get("data", [])
             if not records:
                 time.sleep(sleep_seconds)
                 continue
             status = records[0].get("status")
-            if status in {"PARSE_COMPLETED", "SUCCESS", "DONE", "FINISHED"}:
+            last_status = status
+            if status != last_logged_status:
+                self._log_request_event(
+                    f"import task {import_task_serial} status={status}"
+                )
+                last_logged_status = status
+            if self._is_import_success_status(status):
                 return
-            if status in {"FAIL", "FAILED", "ERROR"}:
+            if self._is_import_failure_status(status):
                 raise RuntimeError(f"Xtreme import failed: {response}")
             time.sleep(sleep_seconds)
-        raise TimeoutError(f"Timed out waiting for import task {import_task_serial}")
+        raise TimeoutError(
+            f"Timed out waiting for import task {import_task_serial}; "
+            f"last_status={last_status}; last_response={last_response}"
+        )
+
+    def _is_import_success_status(self, status) -> bool:
+        normalized = str(status or "").upper()
+        return (
+            normalized in self.IMPORT_SUCCESS_STATUSES
+            or normalized.endswith("_COMPLETED")
+            or normalized.endswith("_SUCCESS")
+        )
+
+    def _is_import_failure_status(self, status) -> bool:
+        normalized = str(status or "").upper()
+        return normalized in self.IMPORT_FAILURE_STATUSES
 
     def request_export(
         self,
