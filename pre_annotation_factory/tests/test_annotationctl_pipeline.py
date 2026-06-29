@@ -163,6 +163,82 @@ def test_select_xtreme_upload_tasks_keeps_empty_frames_when_no_positive_frames()
     assert sorted(tasks) == sorted(empty_tasks)
 
 
+def write_replay_camera_config(config_path: Path):
+    config_path.write_text(
+        json.dumps(
+            [
+                {
+                    "camera_internal": {
+                        "fx": 1000.0,
+                        "fy": 1000.0,
+                        "cx": 960.0,
+                        "cy": 540.0,
+                    },
+                    "camera_external": [
+                        1.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_convert_kitti_to_xtreme1_json_preserves_static_track_fields(tmp_path: Path):
+    module = load_replay_module()
+    label_path = tmp_path / "label.txt"
+    config_path = tmp_path / "camera_config.json"
+    output_path = tmp_path / "result.json"
+    write_replay_camera_config(config_path)
+    label_path.write_text(
+        "Distance_Marker 0 0 0 0 0 10 10 "
+        "1.0 2.0 3.0 4.0 5.0 20.0 0.1 0.2 0.3 "
+        "static_Distance_Marker_000001 1\n",
+        encoding="utf-8",
+    )
+
+    module.convert_kitti_to_xtreme1_json(label_path, config_path, output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert len(payload["objects"]) == 1
+    assert payload["objects"][0]["trackId"] == "static_Distance_Marker_000001"
+    assert payload["objects"][0]["trackName"] == "1"
+
+
+def test_convert_kitti_to_xtreme1_json_keeps_legacy_kitti_untracked(tmp_path: Path):
+    module = load_replay_module()
+    label_path = tmp_path / "label.txt"
+    config_path = tmp_path / "camera_config.json"
+    output_path = tmp_path / "result.json"
+    write_replay_camera_config(config_path)
+    label_path.write_text(
+        "Pole 0 0 0 0 0 10 10 1.0 1.0 1.0 0.0 0.0 10.0 0.0 0.0 0.0\n",
+        encoding="utf-8",
+    )
+
+    module.convert_kitti_to_xtreme1_json(label_path, config_path, output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert len(payload["objects"]) == 1
+    assert "trackId" not in payload["objects"][0]
+    assert "trackName" not in payload["objects"][0]
+
+
 def test_submit_runs_extract_then_upload_then_waiting_state(
     tmp_path: Path, monkeypatch
 ):

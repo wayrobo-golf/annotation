@@ -313,14 +313,18 @@ def rebuild_result_tree_from_export_data(export_root: Path, fetch_annotations_fn
             objects = []
             for obj in annotation.get("objects", []):
                 class_attributes = obj.get("classAttributes", {})
-                objects.append(
-                    {
-                        "type": class_attributes.get("type"),
-                        "className": obj.get("className"),
-                        "modelClass": class_attributes.get("modelClass"),
-                        "contour": class_attributes.get("contour"),
-                    }
-                )
+                result_obj = {
+                    "type": class_attributes.get("type"),
+                    "className": obj.get("className"),
+                    "modelClass": class_attributes.get("modelClass"),
+                    "contour": class_attributes.get("contour"),
+                }
+                track_id = obj.get("trackId") or class_attributes.get("trackId")
+                track_name = obj.get("trackName") or class_attributes.get("trackName")
+                if track_id and track_name:
+                    result_obj["trackId"] = track_id
+                    result_obj["trackName"] = track_name
+                objects.append(result_obj)
 
             frame_name = entry.get("name") or data_json_path.stem
             result_path = result_dir / f"{frame_name}.json"

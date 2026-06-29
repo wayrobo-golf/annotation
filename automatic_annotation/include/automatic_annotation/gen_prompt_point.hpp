@@ -93,6 +93,8 @@ struct BoundingBox {
   // === 1. 基础属性 (对应 XML 外层 item) ===
   std::string
       object_type;  // 对应 <objectType> (例如: "Sand", "Distance Marker")
+  std::string track_id;    // Xtreme1 跨帧实例身份
+  std::string track_name;  // Xtreme1 UI 右侧 Instances 中显示的编号
 
   // 尺寸 (Dimensions)
   double h = 0.0;  // 对应 <h> (Height)

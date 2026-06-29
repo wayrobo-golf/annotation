@@ -268,6 +268,8 @@ def convert_kitti_to_xtreme1_json(kitti_txt_path, config_path, out_json_path):
                 x, y, z = float(parts[11]), float(parts[12]), float(parts[13])
                 ry = float(parts[14])
                 rx, rz = float(parts[15]), float(parts[16])
+                track_id = parts[17] if len(parts) >= 19 else None
+                track_name = parts[18] if len(parts) >= 19 else None
                 
                 # --- A. 构建相机系下的旋转矩阵 (R_6dof) ---
                 rot_cam = R.from_euler('xyz', [rx, ry, rz])
@@ -289,12 +291,16 @@ def convert_kitti_to_xtreme1_json(kitti_txt_path, config_path, out_json_path):
                     "id": str(uuid.uuid4()),
                     "type": "3D_BOX",
                     "className": class_name,
+                    "modelClass": class_name,
                     "contour": {
                         "size3D": {"x": l, "y": w, "z": h},
                         "center3D": {"x": center_lidar[0], "y": center_lidar[1], "z": center_lidar[2]},
                         "rotation3D": {"x": rx_l, "y": ry_l, "z": rz_l}
                     }
                 }
+                if track_id and track_name:
+                    obj["trackId"] = track_id
+                    obj["trackName"] = track_name
                 xtreme1_objects.append(obj)
                 
     with open(out_json_path, 'w') as f:

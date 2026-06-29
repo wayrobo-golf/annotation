@@ -1,5 +1,6 @@
 #include "automatic_annotation/gen_prompt_point.hpp"
 #include "automatic_annotation/image_matching_utils.hpp"
+#include "automatic_annotation/static_track_id_utils.hpp"
 
 #include <pcl/filters/crop_box.h>
 #include <pcl/io/pcd_io.h>
@@ -2011,6 +2012,11 @@ void GenPromptPoint::LoadLabelsFromXML(const std::string& xml_path) {
       }
     }
 
+    const std::size_t static_instance_index =
+        annotation_status_.current_labels.size() + 1;
+    box.track_name = FormatStaticTrackName(static_instance_index);
+    box.track_id = FormatStaticTrackId(box.object_type, static_instance_index);
+
     // 存入全局状态
     annotation_status_.current_labels.push_back(box);
     count++;
@@ -3665,7 +3671,11 @@ void GenPromptPoint::GenerateKITTILabel(
               << bbox_str << " " << std::setprecision(4) << box.h << " "
               << box.w << " " << box.l << " " << bottom_cam.x() << " "
               << bottom_cam.y() << " " << bottom_cam.z() << " " << ry << " "
-              << rx << " " << rz << "\n";
+              << rx << " " << rz;
+    if (!box.track_id.empty() && !box.track_name.empty()) {
+      label_ofs << " " << box.track_id << " " << box.track_name;
+    }
+    label_ofs << "\n";
 
     saved_count++;
   }

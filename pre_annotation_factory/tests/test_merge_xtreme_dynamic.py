@@ -149,6 +149,42 @@ def read_output_labels(output_root: Path):
     )
 
 
+def test_parse_xtreme_to_kitti_lines_drops_track_fields(tmp_path: Path):
+    module = load_merge_module()
+    config_path = tmp_path / "camera_config.json"
+    xtreme_json_path = tmp_path / "frame.json"
+    write_camera_config(config_path)
+    xtreme_json_path.write_text(
+        json.dumps(
+            [
+                {
+                    "objects": [
+                        {
+                            "type": "3D_BOX",
+                            "className": "Distance_Marker",
+                            "trackId": "static_Distance_Marker_000001",
+                            "trackName": "1",
+                            "contour": {
+                                "size3D": {"x": 3.0, "y": 2.0, "z": 1.0},
+                                "center3D": {"x": 0.0, "y": 0.0, "z": 20.0},
+                                "rotation3D": {"x": 0.0, "y": 0.0, "z": 0.0},
+                            },
+                        }
+                    ]
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    lines = module.parse_xtreme_to_kitti_lines(xtreme_json_path, config_path)
+
+    assert len(lines) == 1
+    assert len(lines[0].split()) == 17
+    assert "static_Distance_Marker_000001" not in lines[0]
+    assert lines[0].split()[-1] != "1"
+
+
 def test_xtreme_scene_without_json_is_trusted_as_empty_frame(tmp_path):
     module = load_merge_module()
 

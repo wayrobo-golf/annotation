@@ -33,6 +33,7 @@ include_directories(
 add_executable(automatic_annotation_node 
   src/automatic_annotation_node.cpp 
   src/image_matching_utils.cpp
+  src/static_track_id_utils.cpp
   src/gen_prompt_point.cpp
 )
 
@@ -81,6 +82,15 @@ if(BUILD_TESTING)
   )
   if(TARGET test_image_matching_utils)
     target_include_directories(test_image_matching_utils PRIVATE include)
+  endif()
+
+  ament_add_gtest(
+    test_static_track_id_utils
+    test/test_static_track_id_utils.cpp
+    src/static_track_id_utils.cpp
+  )
+  if(TARGET test_static_track_id_utils)
+    target_include_directories(test_static_track_id_utils PRIVATE include)
   endif()
 endif()
 

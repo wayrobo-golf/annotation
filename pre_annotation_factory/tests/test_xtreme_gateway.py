@@ -1,10 +1,15 @@
-from pathlib import Path
 import io
+import json
+from pathlib import Path
 import urllib.error
 
 import pytest
 
-from my_package.workflow.xtreme_gateway import XtremeGateway, normalize_export_tree
+from my_package.workflow.xtreme_gateway import (
+    XtremeGateway,
+    normalize_export_tree,
+    rebuild_result_tree_from_export_data,
+)
 
 
 def test_gateway_reads_token_from_environment(monkeypatch):
@@ -180,6 +185,47 @@ def test_normalize_export_tree_flattens_single_outer_directory(tmp_path: Path):
     normalize_export_tree(source, target)
 
     assert (target / "Scene_01" / "result" / "frame_1.json").exists()
+
+
+def test_rebuild_result_tree_preserves_track_fields(tmp_path: Path):
+    data_dir = tmp_path / "Scene_01" / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / "frame_1.json").write_text(
+        json.dumps({"name": "frame_1", "dataId": 123}),
+        encoding="utf-8",
+    )
+
+    def fake_fetch(data_ids):
+        assert data_ids == ["123"]
+        return [
+            {
+                "dataId": 123,
+                "objects": [
+                    {
+                        "className": "Distance_Marker",
+                        "classAttributes": {
+                            "type": "3D_BOX",
+                            "modelClass": "Distance_Marker",
+                            "trackId": "static_Distance_Marker_000001",
+                            "trackName": "1",
+                            "contour": {
+                                "size3D": {"x": 1.0, "y": 1.0, "z": 1.0},
+                                "center3D": {"x": 0.0, "y": 0.0, "z": 0.0},
+                                "rotation3D": {"x": 0.0, "y": 0.0, "z": 0.0},
+                            },
+                        },
+                    }
+                ],
+            }
+        ]
+
+    rebuild_result_tree_from_export_data(tmp_path, fake_fetch)
+
+    result_path = tmp_path / "Scene_01" / "result" / "frame_1.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    obj = payload[0]["objects"][0]
+    assert obj["trackId"] == "static_Distance_Marker_000001"
+    assert obj["trackName"] == "1"
 
 
 def test_create_or_get_dataset_returns_existing_dataset_id(monkeypatch):
