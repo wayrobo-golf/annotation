@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 
@@ -183,6 +184,57 @@ def test_parse_xtreme_to_kitti_lines_drops_track_fields(tmp_path: Path):
     assert len(lines[0].split()) == 17
     assert "static_Distance_Marker_000001" not in lines[0]
     assert lines[0].split()[-1] != "1"
+
+
+def test_parse_xtreme_to_kitti_lines_reads_intrinsic_xyz_rotation(tmp_path: Path):
+    module = load_merge_module()
+    config_path = tmp_path / "camera_config.json"
+    xtreme_json_path = tmp_path / "frame.json"
+    write_camera_config(config_path)
+
+    desired_lidar_matrix = module.R.from_euler(
+        "xyz",
+        [-0.023930334527414, -0.16633756081770867, -2.7107857737142087],
+    ).as_matrix()
+    xtreme_euler = module.R.from_matrix(desired_lidar_matrix).as_euler("XYZ")
+    xtreme_json_path.write_text(
+        json.dumps(
+            [
+                {
+                    "objects": [
+                        {
+                            "type": "3D_BOX",
+                            "className": "Golf_Cart",
+                            "contour": {
+                                "size3D": {"x": 5.03, "y": 2.05, "z": 1.95},
+                                "center3D": {
+                                    "x": 1.904,
+                                    "y": -2.737,
+                                    "z": -1.051,
+                                },
+                                "rotation3D": {
+                                    "x": xtreme_euler[0],
+                                    "y": xtreme_euler[1],
+                                    "z": xtreme_euler[2],
+                                },
+                            },
+                        }
+                    ]
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    lines = module.parse_xtreme_to_kitti_lines(xtreme_json_path, config_path)
+
+    parts = lines[0].split()
+    ry = float(parts[14])
+    rx = float(parts[15])
+    rz = float(parts[16])
+    parsed_matrix = module.R.from_euler("xyz", [rx, ry, rz]).as_matrix()
+    expected_matrix = desired_lidar_matrix @ module.R_xtreme2kitti
+    np.testing.assert_allclose(parsed_matrix, expected_matrix, atol=1e-4)
 
 
 def test_xtreme_scene_without_json_is_trusted_as_empty_frame(tmp_path):

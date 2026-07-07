@@ -20,6 +20,8 @@ from scipy.spatial.transform import Rotation as R
 from contextlib import contextmanager
 from pathlib import Path
 
+from my_package.workflow.xtreme_rotation import matrix_to_xtreme_euler
+
 # ================= 配置区 =================
 # 1. 你的工程工作空间绝对路径
 WORKSPACE_PATH = "/home/keyaoli/Code/Wayrobo/3D_Detection_Annotation"
@@ -284,7 +286,7 @@ def convert_kitti_to_xtreme1_json(kitti_txt_path, config_path, out_json_path):
                 # --- C. 计算雷达系下的欧拉角 (引入 R_kitti2ros_inv 修正侧翻问题) ---
                 # 矩阵相乘顺序：先将 Xtreme1 局部系转为 KITTI 局部系，再转到 Camera，最后转到 LiDAR
                 R_lidar = R_cam2lidar.dot(R_6dof).dot(R_kitti2ros_inv)
-                rx_l, ry_l, rz_l = R.from_matrix(R_lidar).as_euler('xyz')
+                rx_l, ry_l, rz_l = matrix_to_xtreme_euler(R_lidar)
                 
                 # 组装 Xtreme1 Object
                 obj = {

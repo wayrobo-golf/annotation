@@ -20,6 +20,8 @@ try:
 except ImportError:
     print("⚠️ 警告: 未能找到 my_package.io_modules, NuScenes 元数据生成功能将不可用。")
 
+from my_package.workflow.xtreme_rotation import xtreme_euler_to_matrix
+
 # ================= 配置区 =================
 # 1. Xtreme1 导出的标注数据根目录 (解压后的 Scene_XX 所在目录)
 XTREME_EXPORT_ROOT = Path("/home/keyaoli/Data/AutoAnnotation/Xtreme/ExportFromXtreme/BaoLi_20260305-20260411012156")
@@ -149,7 +151,7 @@ def parse_xtreme_to_kitti_lines(xtreme_json_path, config_file):
             s, c, rot = obj["contour"]["size3D"], obj["contour"]["center3D"], obj["contour"]["rotation3D"]
             h, w, l = s["z"], s["y"], s["x"]
             
-            R_lidar_to_box = R.from_euler('xyz', [rot["x"], rot["y"], rot["z"]]).as_matrix()
+            R_lidar_to_box = xtreme_euler_to_matrix(rot)
             center_lidar = np.array([c["x"], c["y"], c["z"]])
             
             R_6dof = T_lidar2cam[:3, :3] @ R_lidar_to_box @ R_xtreme2kitti
