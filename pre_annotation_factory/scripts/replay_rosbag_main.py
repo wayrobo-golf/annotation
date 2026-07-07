@@ -70,6 +70,8 @@ RAW_DATA_ARCHIVE_DIR = "/home/keyaoli/Data/AutoAnnotation/Auto_Annotation_Origin
 PRESERVE_FULL_RAW_COPY = True
 FULL_RAW_DATA_ARCHIVE_DIR = "/home/keyaoli/Data/AutoAnnotation/Auto_Annotation_Origin_Full"
 MAX_EMPTY_FRAME_RATIO = 0.1 # 0.1 表示空帧数量最多为有目标帧数量的 10%
+ROS_DOMAIN_ID_MIN = 120
+ROS_DOMAIN_ID_MAX = 232
 # ==========================================================
 
 
@@ -127,10 +129,24 @@ def get_bags_to_process(path):
                 bags.append(root)
     return sorted(list(set(bags)))
 
-def process_bag(bag_path, scene_index):
+def allocate_isolated_ros_domain_id():
+    """为本次自动工作流分配一个非默认 ROS_DOMAIN_ID，隔离外部 ROS 图。"""
+    return random.randint(ROS_DOMAIN_ID_MIN, ROS_DOMAIN_ID_MAX)
+
+
+def build_ros_isolated_env(ros_domain_id):
+    env = os.environ.copy()
+    env["ROS_DOMAIN_ID"] = str(ros_domain_id)
+    return env
+
+
+def process_bag(bag_path, scene_index, ros_domain_id=None):
     """回放单个 Bag 并触发 C++ 节点生成标注数据"""
     SETUP_SCRIPT = os.path.join(WORKSPACE_PATH, "install/setup.bash")
     output_folder_name = f"Scene_{scene_index:02d}"
+    if ros_domain_id is None:
+        ros_domain_id = allocate_isolated_ros_domain_id()
+    ros_env = build_ros_isolated_env(ros_domain_id)
     
     ros_cmd = (
         f"source /opt/ros/humble/setup.bash && "
@@ -144,13 +160,15 @@ def process_bag(bag_path, scene_index):
     print(f"\n{'='*50}")
     print(f"⏳ 正在启动 C++ 标注节点 (Scene {scene_index:02d})...")
     print(f"📁 目标目录: data/{output_folder_name}")
+    print(f"🔒 ROS 隔离域: ROS_DOMAIN_ID={ros_domain_id}")
     print(f"{'='*50}")
     
     node_process = subprocess.Popen(
         ros_cmd, 
         shell=True, 
         executable="/bin/bash",
-        preexec_fn=os.setsid 
+        preexec_fn=os.setsid,
+        env=ros_env,
     )
     
     print("⏲️ 等待节点初始化和加载地图 (15s)...")
@@ -169,7 +187,7 @@ def process_bag(bag_path, scene_index):
         bag_cmd.extend(["--qos-profile-overrides-path", qos_yaml_path])
     
     print(f"▶️ 开始播放 Bag...")
-    subprocess.run(bag_cmd) 
+    subprocess.run(bag_cmd, env=ros_env)
     time.sleep(5) 
     
     print("✅ Bag 播放完毕，正在关闭 C++ 节点...")
@@ -584,8 +602,10 @@ def run_auto_annotation_job(
         if not bag_list:
             raise ValueError(f"在 {target_path} 中没有找到任何有效的 ROS2 Bag！")
 
+        ros_domain_id = allocate_isolated_ros_domain_id()
+        print(f"🔒 本次自动标注工作流启用 ROS_DOMAIN_ID={ros_domain_id}")
         for index, bag in enumerate(bag_list, start=1):
-            process_bag(bag, index)
+            process_bag(bag, index, ros_domain_id=ros_domain_id)
 
         return build_datasets(str(workspace_path), location_str)
 
@@ -611,8 +631,10 @@ if __name__ == "__main__":
     print("="*50 + "\n")
     
     # 1. 自动化回放并触发 C++ 节点执行核心标注
+    ros_domain_id = allocate_isolated_ros_domain_id()
+    print(f"🔒 本次自动标注工作流启用 ROS_DOMAIN_ID={ros_domain_id}")
     for index, bag in enumerate(bag_list, start=1):
-        process_bag(bag, index)
+        process_bag(bag, index, ros_domain_id=ros_domain_id)
         
     print("\n🏆 所有 Bag 均已播放并抽取完毕！")
 

@@ -1008,6 +1008,84 @@ def test_submit_passes_manifest_qos_yaml_path_to_auto_annotation_runner(
     assert calls == [(source_dir, "Demo_20260416", qos_yaml_path)]
 
 
+def test_process_bag_uses_same_isolated_ros_domain_for_node_and_player(
+    tmp_path: Path, monkeypatch
+):
+    module = load_replay_module()
+    calls = []
+
+    class FakeProcess:
+        pid = 12345
+
+        def wait(self, timeout):
+            calls.append(("wait", timeout))
+
+    def fake_popen(_cmd, **kwargs):
+        calls.append(("node", kwargs.get("env")))
+        return FakeProcess()
+
+    def fake_run(_cmd, **kwargs):
+        calls.append(("bag", kwargs.get("env")))
+
+    monkeypatch.setattr(module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(module.os, "getpgid", lambda _pid: 54321)
+    monkeypatch.setattr(module.os, "killpg", lambda _pgid, _signal: None)
+    monkeypatch.setattr(module, "allocate_isolated_ros_domain_id", lambda: 137)
+
+    with module.temporary_config(
+        WORKSPACE_PATH=str(tmp_path),
+        QOS_YAML_PATH=None,
+        YAML_CONFIG_PATH=str(tmp_path / "auto_annotation.yaml"),
+    ):
+        module.process_bag(str(tmp_path / "demo_bag"), 1)
+
+    node_env = next(env for kind, env in calls if kind == "node")
+    bag_env = next(env for kind, env in calls if kind == "bag")
+    assert node_env["ROS_DOMAIN_ID"] == "137"
+    assert bag_env["ROS_DOMAIN_ID"] == "137"
+
+
+def test_run_auto_annotation_job_reuses_one_auto_ros_domain_for_all_bags(
+    tmp_path: Path, monkeypatch
+):
+    module = load_replay_module()
+    target_path = tmp_path / "bags"
+    target_path.mkdir()
+    calls = []
+
+    monkeypatch.setattr(
+        module,
+        "get_bags_to_process",
+        lambda _path: [str(target_path / "bag_1"), str(target_path / "bag_2")],
+    )
+    monkeypatch.setattr(module, "allocate_isolated_ros_domain_id", lambda: 151)
+    monkeypatch.setattr(
+        module,
+        "process_bag",
+        lambda bag, index, ros_domain_id=None: calls.append(
+            (Path(bag).name, index, ros_domain_id)
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "build_datasets",
+        lambda _workspace_path, _location_str: {"xtreme_zip_path": tmp_path / "x.zip"},
+    )
+
+    module.run_auto_annotation_job(
+        target_path,
+        "Demo_20260416",
+        workspace_path=tmp_path / "workspace",
+        xtreme1_output_dir=tmp_path / "xtreme",
+        raw_data_archive_dir=tmp_path / "raw",
+        full_raw_data_archive_dir=tmp_path / "full_raw",
+    )
+
+    assert calls == [("bag_1", 1, 151), ("bag_2", 2, 151)]
+
+
 def test_submit_records_failed_state_when_xtreme_request_fails(tmp_path: Path, monkeypatch):
     from my_package.workflow.pipeline import WorkflowPipeline
 
