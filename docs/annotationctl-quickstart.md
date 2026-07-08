@@ -8,6 +8,7 @@
 4. 在 Xtreme1 中人工微调与补标动态障碍物
 5. 运行 `annotationctl finalize`
 6. 获取最终交付 KITTI 数据集
+7. 如需清理任务，运行 `annotationctl delete`
 
 ## 1. 运行环境
 
@@ -185,9 +186,29 @@ status=completed
 - `paths.final_dataset_dir`
 - `paths.final_zip_path`
 
-## 7. 常见排查点
+## 7. 删除任务
 
-### 7.1 submit 后 Xtreme 中没有预标注框
+```bash
+conda run --live-stream -n nusc_env python -u pre_annotation_factory/scripts/annotationctl.py delete <job_id> --workspace <workspace.root_dir>
+```
+
+`delete` 会先读取 `jobs/<job_id>/state.json`：
+
+- 如果 `state.json` 中记录了 `xtreme.dataset_id`，会先调用 Xtreme1 删除对应 Dataset，再删除本地 `jobs/<job_id>/`。
+- 如果没有记录 `xtreme.dataset_id`，只删除本地 `jobs/<job_id>/`。
+- 如果 Xtreme1 返回 404 / not found，视为远端数据已不存在，继续删除本地任务。
+- 如果 Xtreme1 鉴权、网络或服务端错误导致删除失败，会保留本地任务目录，便于修复后重试。
+
+成功后会输出：
+
+```text
+job_id=<job_id>
+status=deleted
+```
+
+## 8. 常见排查点
+
+### 8.1 submit 后 Xtreme 中没有预标注框
 
 先检查：
 
@@ -207,7 +228,7 @@ status=completed
 
 如果 Xtreme 页面中已经能看到导入数据，但脚本仍报超时，通常是导入耗时超过脚本等待窗口，或 Xtreme 返回了新状态枚举。新版等待逻辑会把最后一次 `last_status` 和 `last_response` 写入 `last_error`，便于判断是否需要继续等待或补充状态兼容。
 
-### 7.2 submit 后全是空帧
+### 8.2 submit 后全是空帧
 
 优先检查 `job.yaml` 中的 `auto_annotation.overrides`：
 
@@ -221,7 +242,7 @@ status=completed
 - `quaternion_order` 是否与原始文件一致，默认是 `wxyz`
 - `jobs/<job_id>/runtime/auto_annotation.yaml` 中生成的 `default_tf_lidar_to_ins` 和 `default_tf_lcam_to_lidar` 是否符合预期
 
-### 7.3 finalize 失败
+### 8.3 finalize 失败
 
 优先检查：
 
@@ -229,7 +250,7 @@ status=completed
 - `artifacts/xtreme_export/normalized/Scene_XX/data/*.json` 是否存在
 - `state.json` 中的 `last_error`
 
-## 8. 多任务 manifest 管理建议
+## 9. 多任务 manifest 管理建议
 
 建议每一组数据使用一份新的 `job.yaml`，不要直接修改上一组已经提交过的 manifest 反复复用。
 

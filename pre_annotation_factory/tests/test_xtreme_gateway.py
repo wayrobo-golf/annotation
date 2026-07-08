@@ -27,6 +27,24 @@ def test_gateway_raises_when_token_missing(monkeypatch):
         XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")
 
 
+def test_delete_dataset_posts_dataset_delete_path(monkeypatch):
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+    gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")
+    calls = []
+
+    def fake_request(method, path, payload=None, params=None):
+        calls.append((method, path, payload, params))
+        return {"code": "OK", "data": None}
+
+    monkeypatch.setattr(gateway, "_request_json", fake_request)
+
+    gateway.delete_dataset("dataset-001")
+
+    assert calls == [
+        ("POST", "/api/dataset/delete/dataset-001", None, None),
+    ]
+
+
 def test_request_json_retries_transient_502(monkeypatch):
     monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
     gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")

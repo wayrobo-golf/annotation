@@ -314,6 +314,31 @@ class WorkflowPipeline:
         )
         return job_id
 
+    def delete(self, job_id: str) -> None:
+        job_dir = self.job_store.jobs_root / job_id
+        state = self.job_store.load_state(job_id)
+        dataset_id = state.xtreme.get("dataset_id")
+        if dataset_id:
+            manifest = load_job_manifest(job_dir / "job.yaml")
+            gateway = self.gateway_factory(
+                manifest.xtreme.base_url,
+                manifest.xtreme.token_env,
+            )
+            try:
+                gateway.delete_dataset(dataset_id)
+            except RuntimeError as exc:
+                if not _is_xtreme_missing_resource_error(exc):
+                    raise
+
+        self._delete_job_dir(job_dir)
+
+    def _delete_job_dir(self, job_dir: Path) -> None:
+        jobs_root = self.job_store.jobs_root.resolve()
+        target = job_dir.resolve()
+        if target == jobs_root or jobs_root not in target.parents:
+            raise ValueError(f"Refusing to delete path outside jobs root: {job_dir}")
+        shutil.rmtree(target)
+
     def finalize(self, job_id: str) -> None:
         job_dir = self.job_store.jobs_root / job_id
         manifest = load_job_manifest(job_dir / "job.yaml")
@@ -389,3 +414,8 @@ class WorkflowPipeline:
                 last_error=str(exc),
             )
             raise
+
+
+def _is_xtreme_missing_resource_error(exc: RuntimeError) -> bool:
+    message = str(exc).lower()
+    return "http 404" in message or "not found" in message

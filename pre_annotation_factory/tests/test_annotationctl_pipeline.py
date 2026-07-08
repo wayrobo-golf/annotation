@@ -1676,6 +1676,200 @@ def test_annotationctl_status_prints_saved_state(tmp_path: Path):
     assert calls == [(tmp_path / "workspace", "job-001")]
 
 
+def test_pipeline_delete_removes_xtreme_dataset_and_local_job(
+    tmp_path: Path, monkeypatch
+):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+    calls = []
+
+    class FakeGateway:
+        def __init__(self, base_url, token_env):
+            calls.append(("init", base_url, token_env))
+
+        def delete_dataset(self, dataset_id):
+            calls.append(("delete_dataset", dataset_id))
+
+    pipeline = WorkflowPipeline.for_tests(
+        tmp_path / "workspace",
+        gateway_factory=FakeGateway,
+    )
+    job_id = pipeline.seed_waiting_job("job-123")
+    job_dir = pipeline.job_store.jobs_root / job_id
+    (job_dir / "job.yaml").write_text(
+        "\n".join(
+            [
+                "job_name: demo_job",
+                "location: Demo_20260416",
+                "input:",
+                f"  source_dir: {tmp_path / 'source'}",
+                "workspace:",
+                f"  root_dir: {tmp_path / 'workspace'}",
+                "xtreme:",
+                "  base_url: http://127.0.0.1:8190",
+                "  token_env: XTREME1_TOKEN",
+                "  dataset_name: DemoDataset",
+                "  dataset_type: lidar_fusion",
+                "output:",
+                f"  final_dataset_dir: {tmp_path / 'final'}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    state = pipeline.job_store.load_state(job_id)
+    state.xtreme["dataset_id"] = "dataset-001"
+    pipeline.job_store.save_state(job_id, state)
+
+    pipeline.delete(job_id)
+
+    assert calls == [
+        ("init", "http://127.0.0.1:8190", "XTREME1_TOKEN"),
+        ("delete_dataset", "dataset-001"),
+    ]
+    assert not job_dir.exists()
+
+
+def test_pipeline_delete_removes_local_job_when_xtreme_dataset_absent(tmp_path: Path):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    pipeline = WorkflowPipeline.for_tests(tmp_path / "workspace")
+    job_id = pipeline.seed_waiting_job("job-123")
+    job_dir = pipeline.job_store.jobs_root / job_id
+
+    pipeline.delete(job_id)
+
+    assert not job_dir.exists()
+
+
+def test_pipeline_delete_preserves_local_job_when_xtreme_delete_fails(
+    tmp_path: Path, monkeypatch
+):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+
+    class FakeGateway:
+        def __init__(self, *_args):
+            pass
+
+        def delete_dataset(self, _dataset_id):
+            raise RuntimeError("delete failed")
+
+    pipeline = WorkflowPipeline.for_tests(
+        tmp_path / "workspace",
+        gateway_factory=FakeGateway,
+    )
+    job_id = pipeline.seed_waiting_job("job-123")
+    job_dir = pipeline.job_store.jobs_root / job_id
+    (job_dir / "job.yaml").write_text(
+        "\n".join(
+            [
+                "job_name: demo_job",
+                "location: Demo_20260416",
+                "input:",
+                f"  source_dir: {tmp_path / 'source'}",
+                "workspace:",
+                f"  root_dir: {tmp_path / 'workspace'}",
+                "xtreme:",
+                "  base_url: http://127.0.0.1:8190",
+                "  token_env: XTREME1_TOKEN",
+                "  dataset_name: DemoDataset",
+                "  dataset_type: lidar_fusion",
+                "output:",
+                f"  final_dataset_dir: {tmp_path / 'final'}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    state = pipeline.job_store.load_state(job_id)
+    state.xtreme["dataset_id"] = "dataset-001"
+    pipeline.job_store.save_state(job_id, state)
+
+    with pytest.raises(RuntimeError, match="delete failed"):
+        pipeline.delete(job_id)
+
+    assert job_dir.exists()
+
+
+def test_pipeline_delete_removes_local_job_when_xtreme_dataset_already_missing(
+    tmp_path: Path, monkeypatch
+):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+
+    class FakeGateway:
+        def __init__(self, *_args):
+            pass
+
+        def delete_dataset(self, _dataset_id):
+            raise RuntimeError("Xtreme request failed: POST url -> HTTP 404 Not Found")
+
+    pipeline = WorkflowPipeline.for_tests(
+        tmp_path / "workspace",
+        gateway_factory=FakeGateway,
+    )
+    job_id = pipeline.seed_waiting_job("job-123")
+    job_dir = pipeline.job_store.jobs_root / job_id
+    (job_dir / "job.yaml").write_text(
+        "\n".join(
+            [
+                "job_name: demo_job",
+                "location: Demo_20260416",
+                "input:",
+                f"  source_dir: {tmp_path / 'source'}",
+                "workspace:",
+                f"  root_dir: {tmp_path / 'workspace'}",
+                "xtreme:",
+                "  base_url: http://127.0.0.1:8190",
+                "  token_env: XTREME1_TOKEN",
+                "  dataset_name: DemoDataset",
+                "  dataset_type: lidar_fusion",
+                "output:",
+                f"  final_dataset_dir: {tmp_path / 'final'}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    state = pipeline.job_store.load_state(job_id)
+    state.xtreme["dataset_id"] = "dataset-001"
+    pipeline.job_store.save_state(job_id, state)
+
+    pipeline.delete(job_id)
+
+    assert not job_dir.exists()
+
+
+def test_annotationctl_delete_dispatches_job_id_and_workspace(tmp_path: Path):
+    module = load_annotationctl_module()
+    calls = []
+
+    def fake_run_delete(workspace, job_id):
+        calls.append((Path(workspace), job_id))
+        return 0
+
+    module.run_delete = fake_run_delete
+    previous_argv = sys.argv[:]
+    sys.argv = [
+        "annotationctl",
+        "delete",
+        "job-001",
+        "--workspace",
+        str(tmp_path / "workspace"),
+    ]
+    try:
+        result = module.main()
+    finally:
+        sys.argv = previous_argv
+
+    assert result == 0
+    assert calls == [(tmp_path / "workspace", "job-001")]
+
+
 def test_annotationctl_submit_creates_job_and_prints_job_id(
     tmp_path: Path, monkeypatch
 ):

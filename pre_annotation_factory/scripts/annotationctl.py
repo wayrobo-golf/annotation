@@ -65,6 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
     finalize_parser.add_argument("job_id")
     finalize_parser.add_argument("--workspace", required=True)
 
+    delete_parser = subparsers.add_parser("delete")
+    delete_parser.add_argument("job_id")
+    delete_parser.add_argument("--workspace", required=True)
+
     return parser
 
 
@@ -110,6 +114,14 @@ def run_finalize(workspace: Path, job_id: str) -> int:
     return 0
 
 
+def run_delete(workspace: Path, job_id: str) -> int:
+    pipeline = WorkflowPipeline(job_store=JobStore(workspace))
+    pipeline.delete(job_id)
+    print(f"job_id={job_id}")
+    print("status=deleted")
+    return 0
+
+
 def main() -> int:
     load_default_env()
     parser = build_parser()
@@ -127,6 +139,8 @@ def main() -> int:
         return run_status(Path(args.workspace), args.job_id)
     if args.command == "finalize":
         return run_finalize(Path(args.workspace), args.job_id)
+    if args.command == "delete":
+        return run_delete(Path(args.workspace), args.job_id)
 
     parser.error(f"unsupported command: {args.command}")
     return 2

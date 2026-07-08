@@ -13,6 +13,7 @@ from pathlib import Path
 class XtremeGateway:
     DATASET_FIND_PATH = "/api/dataset/findByPage"
     DATASET_CREATE_PATH = "/api/dataset/create"
+    DATASET_DELETE_PATH_TEMPLATE = "/api/dataset/delete/{dataset_id}"
     FILE_UPLOAD_URL_PATH = "/api/data/generatePresignedUrl"
     DATASET_IMPORT_PATH = "/api/data/upload"
     DATASET_IMPORT_STATUS_PATH = "/api/data/findUploadRecordBySerialNumbers"
@@ -117,6 +118,13 @@ class XtremeGateway:
             payload={"name": name, "type": dataset_type.strip().upper()},
         )
         return response["data"]["id"]
+
+    def delete_dataset(self, dataset_id: str) -> None:
+        quoted_dataset_id = urllib.parse.quote(str(dataset_id), safe="")
+        self._request_json(
+            "POST",
+            self.DATASET_DELETE_PATH_TEMPLATE.format(dataset_id=quoted_dataset_id),
+        )
 
     def request_upload_url(self, filename: str, dataset_id: str) -> tuple[str, str]:
         response = self._request_json(
