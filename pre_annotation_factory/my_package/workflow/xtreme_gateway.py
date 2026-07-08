@@ -162,8 +162,8 @@ class XtremeGateway:
     def wait_import_done(
         self,
         import_task_serial: str,
-        max_attempts: int = 180,
-        sleep_seconds: float = 5.0,
+        max_attempts: int = 120,
+        sleep_seconds: float = 30.0,
     ) -> None:
         last_response = None
         last_status = None

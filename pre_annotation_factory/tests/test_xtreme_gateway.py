@@ -408,6 +408,26 @@ def test_wait_import_done_timeout_reports_last_status_and_response(monkeypatch):
     assert "progress" in message
 
 
+def test_wait_import_done_defaults_to_one_hour_polling_window(monkeypatch):
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+    gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")
+    calls = []
+    sleep_durations = []
+
+    def fake_request(method, path, payload=None, params=None):
+        calls.append((method, path, payload, params))
+        return {"data": [{"status": "QUEUED"}]}
+
+    monkeypatch.setattr(gateway, "_request_json", fake_request)
+    monkeypatch.setattr("time.sleep", lambda seconds: sleep_durations.append(seconds))
+
+    with pytest.raises(TimeoutError):
+        gateway.wait_import_done("upload-serial-001")
+
+    assert len(calls) == 120
+    assert sleep_durations == [30.0] * 120
+
+
 def test_request_export_and_wait_export_done_use_dataset_export(monkeypatch):
     monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
     gateway = XtremeGateway("http://127.0.0.1:8190", "XTREME1_TOKEN")
