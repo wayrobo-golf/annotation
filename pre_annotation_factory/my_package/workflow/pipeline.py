@@ -16,6 +16,11 @@ from .xtreme_gateway import (
 )
 
 _UNSET = object()
+_XTREME_REMOTE_STATE_KEYS = (
+    "dataset_id",
+    "import_task_serial",
+    "export_serial_number",
+)
 
 
 def _default_extract_archives(*args, **kwargs):
@@ -317,20 +322,38 @@ class WorkflowPipeline:
     def delete(self, job_id: str) -> None:
         job_dir = self.job_store.jobs_root / job_id
         state = self.job_store.load_state(job_id)
-        dataset_id = state.xtreme.get("dataset_id")
-        if dataset_id:
-            manifest = load_job_manifest(job_dir / "job.yaml")
-            gateway = self.gateway_factory(
-                manifest.xtreme.base_url,
-                manifest.xtreme.token_env,
-            )
-            try:
-                gateway.delete_dataset(dataset_id)
-            except RuntimeError as exc:
-                if not _is_xtreme_missing_resource_error(exc):
-                    raise
-
+        self._delete_remote_xtreme_dataset(job_dir, state)
         self._delete_job_dir(job_dir)
+
+    def delete_xtreme(self, job_id: str) -> None:
+        job_dir = self.job_store.jobs_root / job_id
+        state = self.job_store.load_state(job_id)
+        self._delete_remote_xtreme_dataset(job_dir, state)
+        for key in _XTREME_REMOTE_STATE_KEYS:
+            state.xtreme.pop(key, None)
+        self._save_state(
+            job_id,
+            state,
+            status="prepared_for_upload",
+            current_step="prepared_for_upload",
+            last_error=None,
+        )
+
+    def _delete_remote_xtreme_dataset(self, job_dir: Path, state: JobState) -> None:
+        dataset_id = state.xtreme.get("dataset_id")
+        if not dataset_id:
+            return
+
+        manifest = load_job_manifest(job_dir / "job.yaml")
+        gateway = self.gateway_factory(
+            manifest.xtreme.base_url,
+            manifest.xtreme.token_env,
+        )
+        try:
+            gateway.delete_dataset(dataset_id)
+        except RuntimeError as exc:
+            if not _is_xtreme_missing_resource_error(exc):
+                raise
 
     def _delete_job_dir(self, job_dir: Path) -> None:
         jobs_root = self.job_store.jobs_root.resolve()

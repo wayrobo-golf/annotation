@@ -1844,6 +1844,187 @@ def test_pipeline_delete_removes_local_job_when_xtreme_dataset_already_missing(
     assert not job_dir.exists()
 
 
+def test_pipeline_delete_xtreme_removes_remote_dataset_and_rolls_back_state(
+    tmp_path: Path, monkeypatch
+):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+    calls = []
+
+    class FakeGateway:
+        def __init__(self, base_url, token_env):
+            calls.append(("init", base_url, token_env))
+
+        def delete_dataset(self, dataset_id):
+            calls.append(("delete_dataset", dataset_id))
+
+    pipeline = WorkflowPipeline.for_tests(
+        tmp_path / "workspace",
+        gateway_factory=FakeGateway,
+    )
+    job_id = pipeline.seed_waiting_job("job-123")
+    job_dir = pipeline.job_store.jobs_root / job_id
+    (job_dir / "job.yaml").write_text(
+        "\n".join(
+            [
+                "job_name: demo_job",
+                "location: Demo_20260416",
+                "input:",
+                f"  source_dir: {tmp_path / 'source'}",
+                "workspace:",
+                f"  root_dir: {tmp_path / 'workspace'}",
+                "xtreme:",
+                "  base_url: http://127.0.0.1:8190",
+                "  token_env: XTREME1_TOKEN",
+                "  dataset_name: DemoDataset",
+                "  dataset_type: lidar_fusion",
+                "output:",
+                f"  final_dataset_dir: {tmp_path / 'final'}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    state = pipeline.job_store.load_state(job_id)
+    state.status = "waiting_human_annotation"
+    state.current_step = "waiting_human_annotation"
+    state.last_error = "previous error"
+    state.xtreme.update(
+        {
+            "dataset_id": "dataset-001",
+            "import_task_serial": "import-001",
+            "export_serial_number": "export-001",
+        }
+    )
+    pipeline.job_store.save_state(job_id, state)
+
+    pipeline.delete_xtreme(job_id)
+
+    updated_state = pipeline.job_store.load_state(job_id)
+    assert calls == [
+        ("init", "http://127.0.0.1:8190", "XTREME1_TOKEN"),
+        ("delete_dataset", "dataset-001"),
+    ]
+    assert job_dir.exists()
+    assert updated_state.status == "prepared_for_upload"
+    assert updated_state.current_step == "prepared_for_upload"
+    assert updated_state.last_error is None
+    assert "dataset_id" not in updated_state.xtreme
+    assert "import_task_serial" not in updated_state.xtreme
+    assert "export_serial_number" not in updated_state.xtreme
+
+
+def test_pipeline_delete_xtreme_rolls_back_when_remote_dataset_already_missing(
+    tmp_path: Path, monkeypatch
+):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+
+    class FakeGateway:
+        def __init__(self, *_args):
+            pass
+
+        def delete_dataset(self, _dataset_id):
+            raise RuntimeError("Xtreme request failed: POST url -> HTTP 404 Not Found")
+
+    pipeline = WorkflowPipeline.for_tests(
+        tmp_path / "workspace",
+        gateway_factory=FakeGateway,
+    )
+    job_id = pipeline.seed_waiting_job("job-123")
+    job_dir = pipeline.job_store.jobs_root / job_id
+    (job_dir / "job.yaml").write_text(
+        "\n".join(
+            [
+                "job_name: demo_job",
+                "location: Demo_20260416",
+                "input:",
+                f"  source_dir: {tmp_path / 'source'}",
+                "workspace:",
+                f"  root_dir: {tmp_path / 'workspace'}",
+                "xtreme:",
+                "  base_url: http://127.0.0.1:8190",
+                "  token_env: XTREME1_TOKEN",
+                "  dataset_name: DemoDataset",
+                "  dataset_type: lidar_fusion",
+                "output:",
+                f"  final_dataset_dir: {tmp_path / 'final'}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    state = pipeline.job_store.load_state(job_id)
+    state.xtreme["dataset_id"] = "dataset-001"
+    pipeline.job_store.save_state(job_id, state)
+
+    pipeline.delete_xtreme(job_id)
+
+    updated_state = pipeline.job_store.load_state(job_id)
+    assert job_dir.exists()
+    assert updated_state.status == "prepared_for_upload"
+    assert "dataset_id" not in updated_state.xtreme
+
+
+def test_pipeline_delete_xtreme_preserves_state_when_remote_delete_fails(
+    tmp_path: Path, monkeypatch
+):
+    from my_package.workflow.pipeline import WorkflowPipeline
+
+    monkeypatch.setenv("XTREME1_TOKEN", "secret-token")
+
+    class FakeGateway:
+        def __init__(self, *_args):
+            pass
+
+        def delete_dataset(self, _dataset_id):
+            raise RuntimeError("delete failed")
+
+    pipeline = WorkflowPipeline.for_tests(
+        tmp_path / "workspace",
+        gateway_factory=FakeGateway,
+    )
+    job_id = pipeline.seed_waiting_job("job-123")
+    job_dir = pipeline.job_store.jobs_root / job_id
+    (job_dir / "job.yaml").write_text(
+        "\n".join(
+            [
+                "job_name: demo_job",
+                "location: Demo_20260416",
+                "input:",
+                f"  source_dir: {tmp_path / 'source'}",
+                "workspace:",
+                f"  root_dir: {tmp_path / 'workspace'}",
+                "xtreme:",
+                "  base_url: http://127.0.0.1:8190",
+                "  token_env: XTREME1_TOKEN",
+                "  dataset_name: DemoDataset",
+                "  dataset_type: lidar_fusion",
+                "output:",
+                f"  final_dataset_dir: {tmp_path / 'final'}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    state = pipeline.job_store.load_state(job_id)
+    state.status = "waiting_human_annotation"
+    state.current_step = "waiting_human_annotation"
+    state.xtreme["dataset_id"] = "dataset-001"
+    pipeline.job_store.save_state(job_id, state)
+
+    with pytest.raises(RuntimeError, match="delete failed"):
+        pipeline.delete_xtreme(job_id)
+
+    updated_state = pipeline.job_store.load_state(job_id)
+    assert job_dir.exists()
+    assert updated_state.status == "waiting_human_annotation"
+    assert updated_state.current_step == "waiting_human_annotation"
+    assert updated_state.xtreme["dataset_id"] == "dataset-001"
+
+
 def test_annotationctl_delete_dispatches_job_id_and_workspace(tmp_path: Path):
     module = load_annotationctl_module()
     calls = []
@@ -1857,6 +2038,32 @@ def test_annotationctl_delete_dispatches_job_id_and_workspace(tmp_path: Path):
     sys.argv = [
         "annotationctl",
         "delete",
+        "job-001",
+        "--workspace",
+        str(tmp_path / "workspace"),
+    ]
+    try:
+        result = module.main()
+    finally:
+        sys.argv = previous_argv
+
+    assert result == 0
+    assert calls == [(tmp_path / "workspace", "job-001")]
+
+
+def test_annotationctl_delete_xtreme_dispatches_job_id_and_workspace(tmp_path: Path):
+    module = load_annotationctl_module()
+    calls = []
+
+    def fake_run_delete_xtreme(workspace, job_id):
+        calls.append((Path(workspace), job_id))
+        return 0
+
+    module.run_delete_xtreme = fake_run_delete_xtreme
+    previous_argv = sys.argv[:]
+    sys.argv = [
+        "annotationctl",
+        "delete-xtreme",
         "job-001",
         "--workspace",
         str(tmp_path / "workspace"),

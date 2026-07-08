@@ -69,6 +69,10 @@ def build_parser() -> argparse.ArgumentParser:
     delete_parser.add_argument("job_id")
     delete_parser.add_argument("--workspace", required=True)
 
+    delete_xtreme_parser = subparsers.add_parser("delete-xtreme")
+    delete_xtreme_parser.add_argument("job_id")
+    delete_xtreme_parser.add_argument("--workspace", required=True)
+
     return parser
 
 
@@ -122,6 +126,15 @@ def run_delete(workspace: Path, job_id: str) -> int:
     return 0
 
 
+def run_delete_xtreme(workspace: Path, job_id: str) -> int:
+    pipeline = WorkflowPipeline(job_store=JobStore(workspace))
+    pipeline.delete_xtreme(job_id)
+    state = pipeline.job_store.load_state(job_id)
+    print(f"job_id={state.job_id}")
+    print(f"status={state.status}")
+    return 0
+
+
 def main() -> int:
     load_default_env()
     parser = build_parser()
@@ -141,6 +154,8 @@ def main() -> int:
         return run_finalize(Path(args.workspace), args.job_id)
     if args.command == "delete":
         return run_delete(Path(args.workspace), args.job_id)
+    if args.command == "delete-xtreme":
+        return run_delete_xtreme(Path(args.workspace), args.job_id)
 
     parser.error(f"unsupported command: {args.command}")
     return 2

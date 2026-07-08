@@ -206,6 +206,28 @@ job_id=<job_id>
 status=deleted
 ```
 
+### 7.1 只删除 Xtreme 数据并保留本地任务
+
+如果只是想清掉 Xtreme1 上的 Dataset，并保留本地 `jobs/<job_id>/` 里的 zip、raw archive 和上传清单，用：
+
+```bash
+conda run --live-stream -n nusc_env python -u pre_annotation_factory/scripts/annotationctl.py delete-xtreme <job_id> --workspace <workspace.root_dir>
+```
+
+`delete-xtreme` 会：
+
+- 删除 `state.json` 中记录的 `xtreme.dataset_id` 对应的 Xtreme1 Dataset。
+- 如果 Xtreme1 返回 404 / not found，视为远端数据已不存在。
+- 保留本地 `jobs/<job_id>/`。
+- 清理本地 `state.json` 中的 `xtreme.dataset_id`、`xtreme.import_task_serial`、`xtreme.export_serial_number`。
+- 将本地状态回退到 `prepared_for_upload`，便于修改 zip 或 `job.yaml` 后重新执行 `upload`。
+
+成功后可以继续重传：
+
+```bash
+conda run --live-stream -n nusc_env python -u pre_annotation_factory/scripts/annotationctl.py upload <job_id> --workspace <workspace.root_dir>
+```
+
 ## 8. 常见排查点
 
 ### 8.1 submit 后 Xtreme 中没有预标注框
